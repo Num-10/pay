@@ -1,0 +1,181 @@
+{include file="public/before_body" title="应用购买" /}
+<body>
+  <div>
+    {include file="public/header" active="addon" /}
+    <div class="min-wrap-width min-wrap-height">
+      <div class="container-fluid">
+        <div class="row" id="buy" v-cloak>
+          <div class="col-xs-12">
+            <div class="buy-page">
+              <h3 class="app-head">
+                {$addon->title}
+              </h3>
+              <div class="buy-opt">
+                <p class="t">选择购买套餐</p>
+                <div class="cont">
+                  <ul class="list-unstyled">
+                    <li>
+                    {foreach $prices as $item}
+                      <label class="radio3">
+                        <?php
+                          $price = $item['price'];
+                          $period = $item['period'];
+                        ?>
+                        <input type="radio" value="{$period}" v-model="period" @click="selectPrice({$price})">
+                        <span class="txt">
+                          <!-- <span class="lab">推荐</span> -->
+                        {if $period == 0}
+                          <span class="time">免费</span>
+                        {elseif $period == 1200}
+                          <span class="time">永久</span>
+                          <span class="pri">
+                            <strong>{$price}</strong>
+                            元
+                          </span>
+                        {else}
+                          <span class="time">{$period}个月</span>
+                          <span class="pri">
+                            <strong>{$price}</strong>
+                            元
+                          </span>
+                        {/if}
+                        </span>
+                      </label>
+                    {/foreach}
+                    </li>
+                    {if $addon->is_wechat == $isWechat}
+                      <li>
+                      {foreach $apps as $app}
+                        <label class="radio3">
+                          <input type="radio" v-model="appMode" value="{$app->appid}">
+                          <span class="txt">{$app->name}</span>
+                        </label>
+                      {/foreach}
+                      </li>
+                    {/if}
+                    {if $curPrice['price'] == 0}
+                      <li class="text-center">
+                        <a href="javascript:void(0);" class="btn btn-pay" @click="onSubmit">确认订购</a>
+                      </li>
+                    {else}
+                      <li v-if="pay">
+                        <label class="radio4">
+                          <input type="radio" v-model="payMode" value="wechat" @click="selectPay('wechat')">
+                          <span class="txt">微信支付</span>
+                        </label>
+                        <label class="radio4">
+                          <input type="radio" v-model="payMode" value="alipay" @click="selectPay('alipay')">
+                          <span class="txt">支付宝支付</span>
+                        </label>
+                      </li>
+                      <li v-if="pay && payMode">
+                        <div class="box box-img" v-if="payMode == 'wechat'">
+                          <img v-if="payImage" :src="'http://paysdk.weixin.qq.com/example/qrcode.php?data=' + payImage" alt="付款二维码">
+                          <p>支付成功点击 <a href="javascript:;" @click="payReload">刷新页面</a></p>
+                          <!-- <p>请刷新重新生成二维码</p> -->
+                        </div>
+                        <div class="box box-img" v-else></div>
+                        <div class="box box-pri">
+                          <p>
+                            支付金额：
+                            <span>{{ payAmount }}</span>
+                            元
+                          </p>
+                          <label class="check">
+                            <input type="checkbox" checked>
+                            <i></i>
+                            <a href="javascript:void(0);" class="let">同意《应用服务协议》</a>
+                          </label>
+                        </div>
+                      </li>
+                      <li v-if="payMode == 'alipay'" class="text-center">
+                        <a href="javascript:void(0);" class="btn btn-pay" @click="onSubmit">确认订购</a>
+                      </li>
+                    {/if}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {include file="public/footer" /}
+  <div id="goto-alipay" style="display:none"></div>
+</body>
+{include file="public/after_body" /}
+<script type="text/javascript">
+if (typeof Vue === 'function') {
+  var buy = new Vue({
+    el: '#buy',
+    data: {
+      pay: true,
+      payMode: '',
+      payAmount: {$curPrice['price']},
+      payImage: '',
+      period: {$curPrice['period']},
+      appMode: '',
+      out_trade_no: '',
+    },
+    methods: {
+      selectPrice: function(price) {
+        if (price == 0) {
+          this.pay = false;
+          this.payMode = 'alipay';
+        } else {
+          this.pay = true;
+          this.payAmount = Number(price).toFixed(2);
+        }
+        if (this.payMode) {
+          this.generatePay();
+        }
+      },
+      selectPay: function(payWay) {
+        this.payMode = payWay;
+        if (payWay == 'wechat') {
+          this.generatePay();
+        }
+      },
+      onSubmit: function() {
+        this.generatePay(true);
+      },
+      generatePay: function(payType) {
+        var data = new FormData();
+        data.append('period', this.period);
+        data.append('payMode', this.payMode);
+        data.append('appMode', this.appMode);
+        this.$http.post("{:url('home/addon/wx_buy', ['id' => $Think.get.id])}", data).then(function(res) {
+          if (res.body.code == 0) {
+            this.payMode = '';
+            dialog({bodyContent: '<div class="text-center h4">' + res.body.msg + '</div>'}).open();
+          } else if (res.body.code == 1) {
+            if (this.payMode == 'wechat') {
+              this.payImage = res.body.data.code_url;
+              this.out_trade_no = res.body.data.out_trade_no;
+            } else if (this.payMode == 'alipay' && payType) {
+              $('#goto-alipay').html(res.body.data);
+            } else {
+              location.href = res.body.url;
+            }
+          }
+        });
+      },
+      payReload: function() {
+        var data = new FormData();
+        data.append('out_trade_no', this.out_trade_no);
+        this.$http.post("{:url('home/addon/pay_reload', [
+          'id' => $Think.get.id,
+        ])}", data).then(function(res) {
+          if (res.body.code == 0) {
+            dialog({bodyContent: '<div class="text-center h4">' + res.body.msg + '</div>'}).open();
+          } else if (res.body.code == 1) {
+            location.href = res.body.url;
+          }
+        });
+      }
+    }
+  });
+}
+</script>
+</html>
